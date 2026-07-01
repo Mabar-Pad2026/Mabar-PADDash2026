@@ -1497,14 +1497,26 @@ function processFile(file){
             
             fetch(GAS_URL, {
               method: 'POST',
+              mode: 'no-cors',
               body: JSON.stringify(payload)
-            })
-            .then(function(res){ return res.json(); })
-            .then(function(result){
-              if(result.success) console.log('Data tersimpan ke Google Sheets');
-              else console.warn('Gagal simpan ke Google Sheets:', result.message);
-            })
-            .catch(function(err){ console.warn(err); });
+            }).catch(function(){ /* respons memang tak terbaca (batasan GAS), pengiriman tetap jalan */ });
+
+            // Verifikasi ULANG lewat JSONP (kanal yang sudah pasti bebas CORS),
+            // supaya toast yang muncul benar-benar mencerminkan status nyata di Sheets,
+            // bukan hasil tebakan dari respons fetch yang tak terbaca.
+            setTimeout(function(){
+              gasGet('getData', {}, function(result){
+                var rows = (result && result.success && result.data && result.data.data) || [];
+                var found = rows.some(function(r){ return r[2] === file.name; });
+                if(found){
+                  toast('✅','Tersimpan ke Sheets','Data "'+file.name+'" berhasil tercatat di Google Sheets.');
+                } else {
+                  toast('⚠️','Belum Terverifikasi','Data tersimpan lokal, tapi belum terlihat di Google Sheets. Periksa GAS_URL/koneksi — JANGAN upload ulang file yang sama sebelum memastikan, untuk menghindari rekap ganda.');
+                }
+              }, function(){
+                toast('⚠️','Tidak Bisa Verifikasi','Gagal menghubungi Google Sheets untuk verifikasi. Data tersimpan lokal saja untuk saat ini.');
+              });
+            }, 2000);
           }
 
         if(savedAcc.history.length > 50) savedAcc.history = savedAcc.history.slice(-50);
