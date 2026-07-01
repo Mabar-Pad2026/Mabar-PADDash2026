@@ -1433,8 +1433,8 @@ function processFile(file){
       
       if(hasRealisasi){
         // MODE A: Data realisasi PAD
-        var errs=validateRows(rows,rawHeaders,cm);if(errs.length){showVal(errs);return;}
-        hideVal();
+        var valResult=validateRows(rows,rawHeaders,cm);if(valResult.errors.length){showVal(valResult.errors);return;}
+        hideVal();showWarn(valResult.warnings);
         var typeMap={};
         rows.forEach(function(r){
           var j=(r[cm.JENIS_PBJT]||'').toString().trim();if(!j)return;
@@ -1581,8 +1581,8 @@ function processFile(file){
   reader.readAsArrayBuffer(file);
 }
 function validateRows(rows,headers,cm){
-  var errs=[],missing=[{k:'JENIS_PBJT',hint:'JENIS_PBJT, JENIS PBJT, KATEGORI'},{k:'TARGET',hint:'TARGET, ANGGARAN, PAGU'},{k:'REALISASI',hint:'REALISASI, PENCAPAIAN, ACTUAL'},{k:'PERIODE',hint:'PERIODE, BULAN, TAHUN'}].filter(function(x){return !cm[x.k];});
-  if(missing.length){missing.forEach(function(m){errs.push({row:'Header',col:m.k,msg:'Kolom "'+m.k+'" tidak ditemukan. Terdeteksi: '+headers.join(', '),fix:'Nama kolom harus salah satu dari: '+m.hint});});return errs;}
+  var errs=[],warns=[],missing=[{k:'JENIS_PBJT',hint:'JENIS_PBJT, JENIS PBJT, KATEGORI'},{k:'TARGET',hint:'TARGET, ANGGARAN, PAGU'},{k:'REALISASI',hint:'REALISASI, PENCAPAIAN, ACTUAL'},{k:'PERIODE',hint:'PERIODE, BULAN, TAHUN'}].filter(function(x){return !cm[x.k];});
+  if(missing.length){missing.forEach(function(m){errs.push({row:'Header',col:m.k,msg:'Kolom "'+m.k+'" tidak ditemukan. Terdeteksi: '+headers.join(', '),fix:'Nama kolom harus salah satu dari: '+m.hint});});return{errors:errs,warnings:warns};}
   rows.forEach(function(r,i){
     if(errs.length>=15)return;var row=i+2;
     var j=(r[cm.JENIS_PBJT]||'').toString().trim();if(!j)errs.push({row:'Baris '+row,col:'JENIS_PBJT',msg:'Nama jenis PBJT kosong.',fix:'Isi kolom JENIS_PBJT.'});
@@ -1591,9 +1591,9 @@ function validateRows(rows,headers,cm){
     else if(tN>0&&tN<1000)errs.push({row:'Baris '+row,col:'TARGET',msg:'Nilai TARGET sangat kecil ('+tN+').',fix:'Angka Rupiah penuh tanpa pemisah.'});
     var rR=r[cm.REALISASI],rN=parseFloat(String(rR).replace(/[^0-9.]/g,''));
     if(rR===''||rR===null||isNaN(rN)||rN<0)errs.push({row:'Baris '+row,col:'REALISASI',msg:'Nilai REALISASI tidak valid: "'+rR+'".',fix:'Angka 0 diperbolehkan jika belum ada realisasi.'});
-    else if(!isNaN(tN)&&tN>0&&rN>tN*5)errs.push({row:'Baris '+row,col:'REALISASI',msg:'REALISASI melebihi 5x TARGET.',fix:'Periksa jumlah digit.'});
+    else if(!isNaN(tN)&&tN>0&&rN>tN*5)warns.push({row:'Baris '+row,col:'REALISASI',msg:'REALISASI melebihi 5x TARGET ('+(rN/tN*100).toFixed(0)+'%).',fix:'Periksa jumlah digit jika ini bukan realisasi wajar (mis. piutang/denda tahun lalu).'});
   });
-  return errs.slice(0,15);
+  return{errors:errs.slice(0,15),warnings:warns.slice(0,15)};
 }
 function showVal(errs){
   var hE=errs.filter(function(e){return e.row==='Header'||e.row==='—';}),rE=errs.filter(function(e){return e.row!=='Header'&&e.row!=='—';});
@@ -1602,6 +1602,12 @@ function showVal(errs){
   document.getElementById('valList').innerHTML=errs.map(function(e){return '<li class="val-item"><span class="val-row">'+e.row+'</span><span class="val-col">'+(e.col||'')+'</span><div class="val-body"><div class="val-msg">'+e.msg+'</div>'+(e.fix?'<div class="val-fix">💡 '+e.fix+'</div>':'')+'</div></li>';}).join('');
   document.getElementById('valPanel').classList.add('on');
   toast('❌','Upload Gagal',errs.length+' kesalahan ditemukan.');
+}
+function showWarn(warns){
+  if(!warns.length)return;
+  var msg=warns.length+' baris punya REALISASI di atas 500% dari TARGET. Data tetap disimpan — periksa kembali jika ini bukan hal yang wajar.';
+  toast('⚠️','Peringatan Nilai Tidak Biasa',msg);
+  console.warn('Peringatan REALISASI > 500% TARGET:',warns);
 }
 function hideVal(){document.getElementById('valPanel').classList.remove('on');}
 
