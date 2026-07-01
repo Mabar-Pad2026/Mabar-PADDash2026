@@ -1583,11 +1583,8 @@ function processFile(file){
       var _capaian   = _totalTgt > 0 ? (_totalReal/_totalTgt*100) : 0;
       toast('➕','Data Ditambahkan ke Akumulasi',
         'Total kumulatif: '+fmtRp(_totalReal,true)+' ('+_capaian.toFixed(1)+'% dari target) · '+_acc.history.length+' file dikumulasikan');
-      if(IS_GAS||IS_GAS_URL){
-        showSaving('Menyimpan ke Google Sheets...');
-        var payload=JSON.stringify({rows:rows.map(function(r){return{JENIS_PBJT:(r[cm.JENIS_PBJT]||'').toString().trim(),REKENING:(cm.REKENING?r[cm.REKENING]:'').toString().trim(),TARGET:parseFloat(r[cm.TARGET])||0,REALISASI:parseFloat(r[cm.REALISASI])||0,PERIODE:(cm.PERIODE?r[cm.PERIODE]:'').toString()};}).filter(function(r){return r.JENIS_PBJT;}),fileName:file.name,uploadTime:new Date().toISOString()});
-        gasCall('handleSaveDataGAS',payload,function(res){hideSaving();var r=typeof res==='string'?JSON.parse(res):res;if(r&&r.success){setSyncChip('synced','Tersimpan');toast('📊','Tersimpan!',rows.length+' baris berhasil disimpan.');}else{setSyncChip('offline','Gagal');toast('⚠️','Peringatan','Data tampil tapi gagal ke server.');};},function(e){hideSaving();setSyncChip('offline','Gagal');toast('⚠️','Gagal Simpan',e.message);});
-      }else{toast('📊','Data Diperbarui!',rows.length+' baris, '+activeFile.types+' jenis pajak berhasil diproses.');}
+      if(!(IS_GAS||IS_GAS_URL)){
+  toast('📊','Data Diperbarui!',rows.length+' baris, '+activeFile.types+' jenis pajak berhasil diproses.');}
     }catch(err){showVal([{row:'—',col:'Proses',msg:'Gagal membaca file: '+err.message,fix:'Pastikan file tidak terpassword dan format .xlsx valid.'}]);}
   };
   reader.readAsArrayBuffer(file);
