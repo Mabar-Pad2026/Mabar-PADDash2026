@@ -852,7 +852,7 @@ var LOGO_DATA='data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0Z
 var IS_GAS=(typeof google!=='undefined'&&google.script);
 // ── Isi URL Web App Google Apps Script di sini ──
 // Dapatkan dari: Apps Script → Deploy → New Deployment → Web App → salin URL
-var GAS_URL='https://script.google.com/macros/s/AKfycbxphYJcnJA6GlaCZXQL0qE8XBlp5HxOmCQk19QJNKrLcvLoD4x7xg2P24mbn8jNkC56-g/exec'; // contoh: 'https://script.google.com/macros/s/XXXX/exec'
+var GAS_URL='https://script.google.com/macros/s/AKfycbyyAb_VW0-N5leaYtOZmPkqdrWnghPg9H_l6Kby0XTg1gRvluXFBFGidYc_P9UVp-Ax/exec'; // contoh: 'https://script.google.com/macros/s/XXXX/exec'
 var IS_GAS_URL=!IS_GAS&&GAS_URL.length>10;
 var COLORS=['#0891b2','#7c3aed','#1e40af','#92400e','#0f766e','#065f46','#78350f','#15803d','#4d7c0f','#166534','#1d4ed8','#6d28d9','#1e3a8a','#1e40af','#b91c1c','#ca8a04','#d97706','#be185d','#dc2626','#6d28d9','#0284c7'];
 var COL_MAP={
@@ -1307,7 +1307,10 @@ function syncData(silent){
             var row = rows[i];
             var jenis = row[3];
             if(!grouped[jenis]) grouped[jenis] = { target: 0, realisasi: 0 };
-            grouped[jenis].target += Number(row[4]) || 0;
+            // TARGET diambil nilai TERBESAR (bukan dijumlah) — target anggaran tidak bertambah tiap upload,
+            // beda dengan REALISASI yang memang kumulatif tiap upload. Ini menyamakan logika dengan
+            // akumulasi lokal di processFile(), supaya angka tidak berubah saat tombol Sync ditekan.
+            grouped[jenis].target = Math.max(grouped[jenis].target, Number(row[4]) || 0);
             grouped[jenis].realisasi += Number(row[5]) || 0;
           }
           var keys = Object.keys(grouped);
@@ -1353,7 +1356,7 @@ function syncPrevData(silent){
           // Struktur baris dari sheet Data_Prev: [Tahun, Jenis, Target, Realisasi, NamaFile, WaktuSimpan]
           var jenis = r[1];
           if(!grouped[jenis]) grouped[jenis] = { target:0, realisasi:0 };
-          grouped[jenis].target    += Number(r[2]) || 0;
+          grouped[jenis].target    = Math.max(grouped[jenis].target, Number(r[2]) || 0);
           grouped[jenis].realisasi += Number(r[3]) || 0;
           tahunPrev = r[0];
           fileNamePrev = r[4];
@@ -1397,8 +1400,9 @@ function syncPrevData(silent){
 }
 
 /* UPLOAD */
-function handleDrop(e){e.preventDefault();document.getElementById('uploadZone').classList.remove('drag');var f=e.dataTransfer.files[0];if(f)processFile(f);}
-function handleUpload(e){var f=e.target.files[0];if(f)processFile(f);e.target.value='';}
+var _uploadBusy=false;
+function handleDrop(e){e.preventDefault();document.getElementById('uploadZone').classList.remove('drag');if(_uploadBusy){toast('⏳','Masih Memproses','Tunggu proses upload sebelumnya selesai sebelum upload lagi.');return;}var f=e.dataTransfer.files[0];if(f)processFile(f);}
+function handleUpload(e){if(_uploadBusy){toast('⏳','Masih Memproses','Tunggu proses upload sebelumnya selesai sebelum upload lagi.');e.target.value='';return;}var f=e.target.files[0];if(f)processFile(f);e.target.value='';}
 function findCol(headers,key){
   var al=COL_MAP[key]||[key];
   for(var i=0;i<al.length;i++)if(headers.indexOf(al[i])>=0)return al[i];
@@ -1410,7 +1414,19 @@ function processFile(file){
   hideVal();
   if(!file.name.match(/\.xlsx?$/i)){showVal([{row:'—',col:'Format',msg:'Hanya file .xlsx yang diterima.',fix:'Simpan ulang dari Excel → File → Simpan sebagai → .xlsx'}]);return;}
   if(file.size>10*1024*1024){showVal([{row:'—',col:'Ukuran',msg:'File melebihi batas 10 MB.',fix:'Kurangi jumlah baris atau format berlebih.'}]);return;}
+  var _dupCheck=isDuplicateUpload(file);
+  if(_dupCheck&&_dupCheck.isDuplicate){
+    var _prev=_dupCheck.previous;
+    var _prevWaktu=_prev.waktu?new Date(_prev.waktu).toLocaleString('id-ID'):'(waktu tidak diketahui)';
+    var _pesanDup=_dupCheck.nameOnly
+      ?'File dengan nama "'+file.name+'" sudah pernah diupload pada '+_prevWaktu+'.\n\n(Deteksi berdasarkan nama file saja — bisa jadi file berbeda dengan nama sama)\n\nUpload tetap akan MENAMBAH data ke akumulasi. Lanjutkan?'
+      :'File "'+file.name+'" (ukuran dan tanggal modifikasi sama persis) sudah pernah diupload pada '+_prevWaktu+'.\n\nUpload ulang akan MENGGANDAKAN data realisasi di akumulasi dan di Google Sheets!\n\nYakin ingin melanjutkan?';
+    if(!confirm(_pesanDup)){toast('ℹ️','Upload Dibatalkan','File tidak diproses ulang untuk menghindari duplikasi.');return;}
+    toast('⚠️','Peringatan Duplikat','File diproses ulang atas konfirmasi pengguna.');
+  }
+  _uploadBusy=true;
   var reader=new FileReader();
+  reader.onerror=function(){_uploadBusy=false;showVal([{row:'—',col:'Baca File',msg:'Gagal membaca file dari disk.',fix:'Coba upload ulang atau gunakan file lain.'}]);};
   reader.onload=function(ev){
     try{
       var wb=XLSX.read(ev.target.result,{type:'array'}),ws=wb.Sheets[wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(ws,{defval:''});
@@ -1586,6 +1602,7 @@ function processFile(file){
       if(!(IS_GAS||IS_GAS_URL)){
   toast('📊','Data Diperbarui!',rows.length+' baris, '+activeFile.types+' jenis pajak berhasil diproses.');}
     }catch(err){showVal([{row:'—',col:'Proses',msg:'Gagal membaca file: '+err.message,fix:'Pastikan file tidak terpassword dan format .xlsx valid.'}]);}
+    finally{_uploadBusy=false;}
   };
   reader.readAsArrayBuffer(file);
 }
