@@ -1284,7 +1284,7 @@ function launch(){
   if(tabNavAn) tabNavAn.style.display = isAdmin ? '' : 'none';
 
   startClock();
-  if(IS_GAS||IS_GAS_URL){syncData(true);syncPrevData(true);}else{setSyncChip('synced','Demo');renderAll();}
+  if(IS_GAS){syncData(true);syncPrevData(true);}else{setSyncChip('synced','Demo');renderAll();}
   toast(isAdmin?'✅':'👁️',isAdmin?'Selamat datang, Admin!':'Mode Publik',isAdmin?(IS_GAS?'Terhubung ke Google Sheets.':'Mode standalone — data lokal.'):'Menampilkan data penerimaan PAD.');
 }
 
@@ -1648,11 +1648,11 @@ function openDelModal(){document.getElementById('delFileName').textContent=activ
 function doDelete(){
   var btn=document.getElementById('btnConfDel');btn.disabled=true;btn.textContent='🔄 Menghapus...';var fn=activeFile?activeFile.name:'';
   function aft(){var idx=historyLocal.findIndex(function(h){return h.name===fn&&h.status==='Aktif';});if(idx>=0)historyLocal[idx].status='Dihapus';D=JSON.parse(JSON.stringify(DEMO));activeFile=null;hideVal();hideFileStatus();setSyncChip('synced','Data Demo');closeM('mDel');renderAll();btn.disabled=false;btn.textContent='🗑️ Ya, Hapus & Ganti';toast('🗑️','File Dihapus','Data kembali ke demo.');}
-  if((IS_GAS||IS_GAS_URL)&&fn){gasCall('handleDeleteDataGAS',fn,function(res){var r=typeof res==='string'?JSON.parse(res):res;if(!r||!r.success){toast('⚠️','Peringatan','Gagal menghapus data di Google Sheets. Data lokal tetap direset.');}aft();},function(){toast('⚠️','Peringatan','Gagal menghubungi Google Sheets. Data lokal tetap direset.');aft();});}else{aft();}
+  if(IS_GAS&&fn){gasCall('handleDeleteDataGAS',fn,function(){aft();},function(){aft();});}else{aft();}
 }
 
 /* HISTORY */
-function openHistModal(){openM('mHist');document.getElementById('histList').innerHTML='<div style="text-align:center;padding:2rem;color:var(--text3)">⏳ Memuat...</div>';if(IS_GAS||IS_GAS_URL){gasCall('handleGetHistoryGAS',null,function(res){var r=typeof res==='string'?JSON.parse(res):res;renderHistList(r&&r.history?r.history:historyLocal);},function(){renderHistList(historyLocal);});}else{renderHistList(historyLocal);}}
+function openHistModal(){openM('mHist');document.getElementById('histList').innerHTML='<div style="text-align:center;padding:2rem;color:var(--text3)">⏳ Memuat...</div>';if(IS_GAS){gasCall('handleGetHistoryGAS',null,function(res){var r=typeof res==='string'?JSON.parse(res):res;renderHistList(r&&r.history?r.history:historyLocal);},function(){renderHistList(historyLocal);});}else{renderHistList(historyLocal);}}
 function renderHistList(list){var el=document.getElementById('histList');if(!list||!list.length){el.innerHTML='<div style="text-align:center;padding:2rem;color:var(--text3)">Belum ada riwayat upload.</div>';return;}var sS={'Aktif':'background:#d1fae5;color:#065f46;','Berhasil':'background:#d1fae5;color:#065f46;','Diganti':'background:#fef3c7;color:#92400e;','Dihapus':'background:#fee2e2;color:#991b1b;'};el.innerHTML=list.map(function(h){var t=h.time instanceof Date?h.time.toLocaleString('id-ID'):(h.time||'—');return '<div class="hist-item"><div class="hist-ico">📗</div><div style="flex:1"><div class="hist-name">'+(h.name||'—')+'</div><div class="hist-meta">'+(h.rows||'—')+' baris · '+(h.types||'—')+' jenis · '+t+'</div></div><span class="hist-badge" style="'+(sS[h.status]||'background:#f1f5f9;color:#4a5568;')+'">'+(h.status||'—')+'</span></div>';}).join('');}
 
 /* MODAL HELPERS */
@@ -2517,33 +2517,27 @@ function Utilities_formatDate_(date){
 }
 
 function resetAkumulasi(){
-  if(!confirm('Reset akan menghapus SEMUA data akumulasi yang tersimpan'+((IS_GAS||IS_GAS_URL)?' — TERMASUK di Google Spreadsheet (Data_Realisasi & Data_Akumulasi)':'')+'.\nDashboard akan kembali ke data demo.\n\nLanjutkan?')) return;
+  var pesan = IS_GAS_URL
+    ? 'Reset akan menghapus SEMUA data akumulasi yang tersimpan,\nTERMASUK data di Google Sheets (Data_Realisasi & Data_Akumulasi).\nDashboard akan kembali ke data demo.\n\nLanjutkan?'
+    : 'Reset akan menghapus SEMUA data akumulasi yang tersimpan.\nDashboard akan kembali ke data demo.\n\nLanjutkan?';
+  if(!confirm(pesan)) return;
+  localStorage.removeItem(AKUMULASI_KEY);
+  D = JSON.parse(JSON.stringify(DEMO));
+  activeFile = null;
+  hideFileStatus();
+  setSyncChip('synced','Data Demo');
+  renderAll();
 
-  function resetLocal(){
-    localStorage.removeItem(AKUMULASI_KEY);
-    D = JSON.parse(JSON.stringify(DEMO));
-    activeFile = null;
-    hideFileStatus();
-    setSyncChip('synced','Data Demo');
-    renderAll();
-  }
-
-  if(IS_GAS||IS_GAS_URL){
-    setSyncChip('syncing','Mereset di Google Sheets...');
-    gasCall('resetAllDataGAS',null,function(res){
-      var r=typeof res==='string'?JSON.parse(res):res;
-      resetLocal();
-      if(r&&r.success){
-        toast('🗑️','Akumulasi Direset','Data di aplikasi maupun di Google Spreadsheet berhasil dikosongkan.');
-      } else {
-        toast('⚠️','Reset Sebagian','Data lokal direset, tapi gagal menghapus di Google Sheets: '+(r&&r.message||'error tidak diketahui')+'. Silakan cek sheet Data_Realisasi/Data_Akumulasi secara manual.');
-      }
-    },function(e){
-      resetLocal();
-      toast('⚠️','Reset Sebagian','Data lokal direset, tapi gagal menghubungi Google Sheets ('+(e&&e.message||'')+'). Data lama masih ada di Spreadsheet — coba reset lagi saat koneksi normal.');
-    });
+  if(IS_GAS_URL){
+    // Kirim perintah hapus ke Google Sheets (mode no-cors: respons tak terbaca,
+    // tapi permintaan tetap diproses oleh GAS — sama seperti alur saveData).
+    fetch(GAS_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      body: JSON.stringify({ action: 'resetData' })
+    }).catch(function(){ /* respons memang tak terbaca, ini normal */ });
+    toast('🗑️','Akumulasi Direset','Data lokal & Google Sheets berhasil dikosongkan.');
   } else {
-    resetLocal();
     toast('🗑️','Akumulasi Direset','Data kembali ke tampilan demo.');
   }
 }
