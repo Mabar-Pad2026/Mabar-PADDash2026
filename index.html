@@ -1305,13 +1305,17 @@ function syncData(silent){
           var grouped = {};
           for(var i = 1; i < rows.length; i++){
             var row = rows[i];
-            var jenis = row[3];
+            // Kolom Data_Realisasi: 0=No,1=WaktuUpload,2=NamaFile,3=Periode,4=JenisPBJT,
+            // 5=KodeRekening,6=NamaRekening,7=Target,8=Realisasi,9=Capaian,10=Status
+            // (FIX: sebelumnya kode ini salah membaca row[3]/row[4]/row[5] — yaitu
+            // Periode/JenisPBJT/KodeRekening — bukan Jenis/Target/Realisasi — sehingga
+            // angka yang tampil di dashboard tidak sesuai dengan Excel yang diupload.)
+            var jenis = row[4];
             if(!grouped[jenis]) grouped[jenis] = { target: 0, realisasi: 0 };
             // TARGET diambil nilai TERBESAR (bukan dijumlah) — target anggaran tidak bertambah tiap upload,
-            // beda dengan REALISASI yang memang kumulatif tiap upload. Ini menyamakan logika dengan
-            // akumulasi lokal di processFile(), supaya angka tidak berubah saat tombol Sync ditekan.
-            grouped[jenis].target = Math.max(grouped[jenis].target, Number(row[4]) || 0);
-            grouped[jenis].realisasi += Number(row[5]) || 0;
+            // beda dengan REALISASI yang memang kumulatif antar periode (mis. antar bulan).
+            grouped[jenis].target = Math.max(grouped[jenis].target, Number(row[7]) || 0);
+            grouped[jenis].realisasi += Number(row[8]) || 0;
           }
           var keys = Object.keys(grouped);
           D = {
@@ -2517,27 +2521,35 @@ function Utilities_formatDate_(date){
 }
 
 function resetAkumulasi(){
-  var pesan = IS_GAS_URL
-    ? 'Reset akan menghapus SEMUA data akumulasi yang tersimpan,\nTERMASUK data di Google Sheets (Data_Realisasi & Data_Akumulasi).\nDashboard akan kembali ke data demo.\n\nLanjutkan?'
-    : 'Reset akan menghapus SEMUA data akumulasi yang tersimpan.\nDashboard akan kembali ke data demo.\n\nLanjutkan?';
-  if(!confirm(pesan)) return;
+  if(!confirm('Reset akan menghapus SEMUA data akumulasi yang tersimpan — termasuk di Google Sheets.\nDashboard akan kembali ke data demo.\n\nLanjutkan?')) return;
+
+  // 1) Bersihkan cache lokal di browser
   localStorage.removeItem(AKUMULASI_KEY);
   D = JSON.parse(JSON.stringify(DEMO));
   activeFile = null;
   hideFileStatus();
-  setSyncChip('synced','Data Demo');
   renderAll();
 
+  // 2) FIX: sebelumnya reset HANYA menghapus localStorage, Google Sheet
+  // tidak pernah ikut terhapus. Sekarang panggil GAS untuk membersihkan
+  // Data_Realisasi & Data_Akumulasi di spreadsheet juga.
   if(IS_GAS_URL){
-    // Kirim perintah hapus ke Google Sheets (mode no-cors: respons tak terbaca,
-    // tapi permintaan tetap diproses oleh GAS — sama seperti alur saveData).
-    fetch(GAS_URL, {
-      method: 'POST',
-      mode: 'no-cors',
-      body: JSON.stringify({ action: 'resetData' })
-    }).catch(function(){ /* respons memang tak terbaca, ini normal */ });
-    toast('🗑️','Akumulasi Direset','Data lokal & Google Sheets berhasil dikosongkan.');
+    setSyncChip('syncing','Mereset di Sheets...');
+    gasCall('resetData',{target:'semua'},function(res){
+      var r=typeof res==='string'?JSON.parse(res):res;
+      if(r&&r.success){
+        setSyncChip('synced','Data Demo');
+        toast('🗑️','Akumulasi Direset','Data lokal & Google Sheets sudah dikosongkan.');
+      } else {
+        setSyncChip('offline','Gagal Reset Sheet');
+        toast('⚠️','Sebagian Berhasil','Data lokal direset, tapi Google Sheets gagal dibersihkan: '+((r&&r.message)||'error tidak diketahui'));
+      }
+    },function(e){
+      setSyncChip('offline','Gagal Reset Sheet');
+      toast('⚠️','Sebagian Berhasil','Data lokal direset, tapi gagal menghubungi Google Sheets: '+e.message);
+    });
   } else {
+    setSyncChip('synced','Data Demo');
     toast('🗑️','Akumulasi Direset','Data kembali ke tampilan demo.');
   }
 }
