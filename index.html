@@ -1407,11 +1407,12 @@ function syncPrevData(silent){
 var _uploadBusy=false;
 function handleDrop(e){e.preventDefault();document.getElementById('uploadZone').classList.remove('drag');if(_uploadBusy){toast('⏳','Masih Memproses','Tunggu proses upload sebelumnya selesai sebelum upload lagi.');return;}var f=e.dataTransfer.files[0];if(f)processFile(f);}
 function handleUpload(e){if(_uploadBusy){toast('⏳','Masih Memproses','Tunggu proses upload sebelumnya selesai sebelum upload lagi.');e.target.value='';return;}var f=e.target.files[0];if(f)processFile(f);e.target.value='';}
-function findCol(headers,key){
+function findCol(headers,key,exclude){
   var al=COL_MAP[key]||[key];
-  for(var i=0;i<al.length;i++)if(headers.indexOf(al[i])>=0)return al[i];
-  for(var i=0;i<al.length;i++)for(var j=0;j<headers.length;j++)if(headers[j].trim().toUpperCase()===al[i].toUpperCase())return headers[j];
-  for(var i=0;i<al.length;i++)for(var j=0;j<headers.length;j++){var h=headers[j].trim().toUpperCase(),a=al[i].toUpperCase();if(h.indexOf(a)>=0||a.indexOf(h)>=0)return headers[j];}
+  var ex=exclude||[];
+  for(var i=0;i<al.length;i++)if(headers.indexOf(al[i])>=0&&ex.indexOf(al[i])<0)return al[i];
+  for(var i=0;i<al.length;i++)for(var j=0;j<headers.length;j++)if(headers[j].trim().toUpperCase()===al[i].toUpperCase()&&ex.indexOf(headers[j])<0)return headers[j];
+  for(var i=0;i<al.length;i++)for(var j=0;j<headers.length;j++){var h=headers[j].trim().toUpperCase(),a=al[i].toUpperCase();if((h.indexOf(a)>=0||a.indexOf(h)>=0)&&ex.indexOf(headers[j])<0)return headers[j];}
   return null;
 }
 function processFile(file){
@@ -1437,10 +1438,16 @@ function processFile(file){
       if(!rows.length){showVal([{row:'—',col:'Sheet',msg:'Sheet pertama kosong.',fix:'Pastikan data dimulai dari baris 1.'}]);return;}
       var headers=Object.keys(rows[0]).map(function(h){return h.trim().toUpperCase();});
       var rawHeaders=Object.keys(rows[0]);
+      // FIX: urutan resolusi diubah supaya NAMA_REKENING (alias lebih spesifik,
+      // sering match persis "NAMA JENIS PAJAK SESUAI REKENING") diselesaikan LEBIH DULU,
+      // lalu kolom yang sudah terpakai itu di-exclude saat mencari REKENING (kode rekening).
+      // Sebelumnya REKENING ikut "menyerempet" kolom NAMA_REKENING karena sama-sama
+      // mengandung kata "REKENING", sehingga Kode Rekening tertulis sama dengan Nama Rekening.
+      var namaRekCol=findCol(rawHeaders,'NAMA_REKENING');
       var cm={
         JENIS_PBJT:findCol(rawHeaders,'JENIS_PBJT'),
-        REKENING:findCol(rawHeaders,'REKENING'),
-        NAMA_REKENING:findCol(rawHeaders,'NAMA_REKENING'),
+        NAMA_REKENING:namaRekCol,
+        REKENING:findCol(rawHeaders,'REKENING',namaRekCol?[namaRekCol]:[]),
         TARIF:findCol(rawHeaders,'TARIF'),
         HARGA:findCol(rawHeaders,'HARGA'),
         TARGET:findCol(rawHeaders,'TARGET'),
