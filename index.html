@@ -1270,7 +1270,12 @@ function doLogin(){
   }else{setTimeout(function(){btn.disabled=false;btn.textContent='Masuk ke Dashboard →';if(u==='admin'&&p==='admin123'){isAdmin=true;launch();}else{errEl.textContent='⚠ Username atau password salah.';errEl.style.display='block';}},400);}
 }
 function doPub(){isAdmin=false;launch();}
-function doLogout(){isAdmin=false;activeFile=null;document.getElementById('loginScreen').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('uIn').value='';document.getElementById('pIn').value='';}
+function doLogout(){
+  isAdmin=false;activeFile=null;
+  if(_autoSyncTimer){clearInterval(_autoSyncTimer);_autoSyncTimer=null;}
+  document.getElementById('loginScreen').style.display='flex';document.getElementById('dashboard').style.display='none';document.getElementById('uIn').value='';document.getElementById('pIn').value='';
+}
+var _autoSyncTimer=null;
 function launch(){
   document.getElementById('loginScreen').style.display='none';
   document.getElementById('dashboard').style.display='block';
@@ -1279,13 +1284,28 @@ function launch(){
   b.className='role-chip '+(isAdmin?'role-admin':'role-pub');
   document.getElementById('adminPanel').classList.toggle('on',isAdmin);
 
-  // Tampilkan/sembunyikan tab Analytics berdasarkan role
   var tabNavAn = document.getElementById('tabNavAnalytics');
   if(tabNavAn) tabNavAn.style.display = isAdmin ? '' : 'none';
 
   startClock();
-  if(IS_GAS){syncData(true);syncPrevData(true);}else{setSyncChip('synced','Demo');renderAll();}
+  // FIX: sebelumnya kondisi ini hanya mengecek IS_GAS (mode embedded di Apps Script),
+  // padahal aplikasi Anda berjalan di mode standalone (fetch ke GAS_URL) dengan
+  // IS_GAS_URL=true dan IS_GAS=false. Akibatnya, auto-sync saat login TIDAK PERNAH
+  // benar-benar berjalan — dashboard selalu menampilkan data Demo sampai tombol
+  // Sync diklik manual. Sekarang kedua mode dicek.
+  if(IS_GAS||IS_GAS_URL){syncData(true);syncPrevData(true);}else{setSyncChip('synced','Demo');renderAll();}
   toast(isAdmin?'✅':'👁️',isAdmin?'Selamat datang, Admin!':'Mode Publik',isAdmin?(IS_GAS?'Terhubung ke Google Sheets.':'Mode standalone — data lokal.'):'Menampilkan data penerimaan PAD.');
+
+  // Auto-refresh berkala: sinkron ulang tiap 60 detik selama sesi terbuka,
+  // supaya data tetap "hidup" tanpa perlu klik Sync manual atau login ulang.
+  if(_autoSyncTimer){clearInterval(_autoSyncTimer);_autoSyncTimer=null;}
+  if(IS_GAS_URL || IS_GAS){
+    _autoSyncTimer=setInterval(function(){
+      if(document.getElementById('dashboard').style.display!=='none'){
+        syncData(true);
+      }
+    },60000);
+  }
 }
 
 /* SYNC */
